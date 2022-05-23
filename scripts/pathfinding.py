@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-from cgi import test
 import rospy 
 import numpy as np
 from nav_msgs.msg import OccupancyGrid
+from robotics_final_project.msg import NodeRow, NodeMatrix
 
 class Node(object):
     def __init__(self, x: int, y: int):
@@ -35,6 +35,16 @@ class Pathfinder(object):
         # TODO: create map using SLAM and import it for obstacle data
         # rospy.Subscriber("map", OccupancyGrid, self.get_map)
         # rospy.sleep(2)
+        rospy.init_node("target_path")
+        rospy.Subscriber("target_nodes", NodeMatrix, self.get_target)
+        self.path_pub = rospy.Publisher("target_path", NodeMatrix, queue_size=10)
+        rospy.sleep(2)
+
+    def get_target(self, data):
+        self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
+        self.goal = Node(data.matrix[1].row[0], data.matrix[1].row[1])
+        self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
+        self.a_star()
 
     def get_map(self, data):
         self.map = data
@@ -96,7 +106,7 @@ class Pathfinder(object):
                     test_node = self.grid[nb[0]][nb[1]]
                     test_node.parent = [self.current.x, self.current.y]
                     new_gcost = self.update_gcost(test_node)
-                    
+
                     if new_gcost < self.grid[nb[0]][nb[1]].gcost or \
                        (self.grid[nb[0]][nb[1]] not in open_list):
                         self.grid[nb[0]][nb[1]].parent = [self.current.x, self.current.y]
@@ -112,9 +122,14 @@ class Pathfinder(object):
                         self.grid[nb[0]][nb[1]].parent = old_parent
 
         path = []
+        pub_path = NodeMatrix()
         while self.current.x != self.start.x or self.current.y != self.start.y:
             path.append(self.current)
+            pub_path.matrix.append(NodeRow(row=[self.current.x, self.current.y]))
             self.current = self.grid[self.current.parent[0]][self.current.parent[1]]
+
+        self.path_pub.publish(pub_path)
+
         return path
 
 
@@ -127,4 +142,5 @@ if __name__ == '__main__':
     path = pf.a_star()
     for p in path:
         print(p.x, p.y, p.gcost, p.hcost)
-    print(path)
+    # print(path)
+    print(path[-1].x, path[-1].y)

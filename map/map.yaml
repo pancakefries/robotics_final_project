@@ -1,4 +1,4 @@
-image: /home/ubuntu/catkin_ws/src/map.pgm
+image: /home/ubuntu/catkin_ws/src/robotics_final_project/map/map.pgm
 resolution: 0.050000
 origin: [-10.000000, -10.000000, 0.000000]
 negate: 0
