@@ -1,0 +1,5 @@
+<launch>
+      <include file="/home/ubuntu/catkin_ws/src/robotics_final_project/launch/turtlebot_stage_psu.launch"/>
+     <node name="map_navigation" pkg="robotics_final_project" type="map_navigation_node" output="screen">
+     </node>
+</launch>
