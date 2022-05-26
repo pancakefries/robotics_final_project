@@ -31,6 +31,11 @@ class RobotController(object):
         self.goal_y = 0
         self.goal_theta = 0
 
+        self.player_x = 0
+        self.player_y = 0
+        self.end_x = 0
+        self.end_y = 0
+
         self.linspeed = 0
         self.linspeed_max = 0.7
         self.angspeed = 0
@@ -259,7 +264,22 @@ class RobotController(object):
         #     self.received_response = 0
         #     execute above
         # print("decided target")
-        pass
+        if self.received_response:
+            self.received_response = 0
+            self.node_pub.publish(NodeMatrix([NodeRow(self.x, self.y), NodeRow(self.player_x, self.player_y)]))
+            while not self.received_response:
+                rospy.sleep(0.1)
+            dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
+            self.received_response = 0
+            self.node_pub.publish(NodeMatrix([NodeRow(self.x, self.y), NodeRow(self.end_x, self.end_y)]))
+            while not self.received_response:
+                rospy.sleep(0.1)
+            dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
+
+            if dist_player < dist_end:
+                self.goal_type = "player"
+            else:
+                self.goal_type = "goal"
 
     def path_to_map(self, data):
         # TODO: implement coordinate transform between pathfinding and map
