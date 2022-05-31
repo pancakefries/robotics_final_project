@@ -15,22 +15,16 @@ class Node(object):
         self.parent = None
 
 class Pathfinder(object):
-    def __init__(self, width: int, height: int, start: Node, end: Node):
-        self.current = Node(start.x, start.y)
-        self.current.parent = [self.current.x, self.current.y]
-        self.start = Node(start.x, start.y)
-        self.start.parent = [start.x, start.y]
-        self.goal = end
+    def __init__(self, start: Node, end: Node):
+        self.current = None
+        self.start = None
+        self.goal = None
         self.grid = []
-        for i in range(width):
-            row = []
-            for j in range(height):
-                row.append(Node(i, j))
-            self.grid.append(row)
 
         self.map = None
-        self.width = width
-        self.height = height
+        self.width = 0
+        self.height = 0
+        self.map_initialized = False
 
         # TODO: create map using SLAM and import it for obstacle data
         # rospy.Subscriber("map", OccupancyGrid, self.get_map)
@@ -39,12 +33,15 @@ class Pathfinder(object):
         rospy.Subscriber("target_nodes", NodeMatrix, self.get_target)
         rospy.Subscriber("map", OccupancyGrid, self.get_map)
         self.path_pub = rospy.Publisher("target_path", NodeMatrix, queue_size=10)
-        rospy.sleep(2)
 
     def get_target(self, data):
         self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
+        self.start.parent = [start.x, start.y]
         self.goal = Node(data.matrix[1].row[0], data.matrix[1].row[1])
-        self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
+        self.current = Node(data.matrix[0].row[0], data.matrix[0].row[1])
+        self.current.parent = [self.current.x, self.current.y]
+        while not self.map_initialized:
+            rospy.sleep(0.1)
         self.a_star()
 
     def get_map(self, data):
@@ -55,13 +52,19 @@ class Pathfinder(object):
         # A float describing m / cell fo the map
         self.map_resolution = map_info.resolution
         # How many cells the map is across
-        self.map_width = map_info.width
+        self.width = map_info.width
         # How many cells the map is up and down
-        self.map_height = map_info.height
+        self.height = map_info.height
         # The pose of the map's origin
         self.map_origin = map_info.origin
         # self.width = data.info.width
         # self.height = data.info.height
+        for i in range(self.width):
+            row = []
+            for j in range(self.height):
+                row.append(Node(i, j))
+            self.grid.append(row)
+        self.map_initialized = True
 
     def get_neighbors(self, current):
         # Get the 8 coordinates surrounding the current cell
@@ -73,7 +76,8 @@ class Pathfinder(object):
                 if (x_offset != y_offset or x_offset != 0) and \
                     (current.x + x_offset < self.width) and \
                     (current.y + y_offset < self.height) and \
-                    (current.x + x_offset >= 0) and (current.y + y_offset >= 0):
+                    (current.x + x_offset >= 0) and (current.y + y_offset >= 0) and \
+                    (self.map_data[x_offset + y_offset*self.width] == 1):
                     neighbors.append([current.x + x_offset, current.y + y_offset])
         return neighbors
 
@@ -146,13 +150,13 @@ class Pathfinder(object):
 
 
 if __name__ == '__main__':
-    m = 10
-    n = 12
+    # m = 10
+    # n = 12
     start = Node(1, 1)
     end = Node(7, 9)
-    pf = Pathfinder(m, n, start, end)
-    path = pf.a_star()
-    for p in path:
-        print(p.x, p.y, p.gcost, p.hcost)
-    # print(path)
-    print(path[-1].x, path[-1].y)
+    pf = Pathfinder(start, end)
+    # path = pf.a_star()
+    # for p in path:
+    #     print(p.x, p.y, p.gcost, p.hcost)
+    # # print(path)
+    # print(path[-1].x, path[-1].y)

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from sklearn.preprocessing import PolynomialFeatures
 import rospy 
 import numpy as np
 from robotics_final_project.msg import NodeRow, NodeMatrix
@@ -76,10 +75,10 @@ class RobotController(object):
         rospy.init_node("target_nodes")
         rospy.Subscriber("target_path", NodeMatrix, self.update_goal)
         rospy.Subscriber("returned", Point, self.player_returned)
-        rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
-        rospy.Subscriber("scan", LaserScan, self.scan_callback)
-        rospy.Subscriber("amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
-        rospy.Subscriber("map", OccupancyGrid, self.get_map)
+        rospy.Subscriber('bot/camera/rgb/image_raw', Image, self.image_callback)
+        rospy.Subscriber("bot/scan", LaserScan, self.scan_callback)
+        rospy.Subscriber("bot/amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
+        rospy.Subscriber("bot/map", OccupancyGrid, self.get_map)
 
         # TODO: implement subscriber for node that uses PFL replacement library
         self.node_pub = rospy.Publisher("target_nodes", NodeMatrix, queue_size=10)
@@ -301,12 +300,18 @@ class RobotController(object):
         # print("decided target")
         if self.received_response:
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow([self.x, self.y]), NodeRow([self.player_x, self.player_y])]))
+            self.node_pub.publish(NodeMatrix([NodeRow([(self.x - self.map_origin.position.x)*self.map_resolution, \
+                                                       (self.y - self.map_origin.position.y)*self.map_resolution]), \
+                                              NodeRow([(self.player_x - self.map_origin.position.x)*self.map_resolution, \
+                                                       (self.player_y - self.map_origin.position.y)*self.map_resolution])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow([self.x, self.y]), NodeRow([self.end_x, self.end_y])]))
+            self.node_pub.publish(NodeMatrix([NodeRow([(self.x - self.map_origin.position.x)*self.map_resolution, \
+                                                       (self.y - self.map_origin.position.y)*self.map_resolution]), \
+                                              NodeRow([(self.end_x - self.map_origin.position.x)*self.map_resolution, \
+                                                       (self.end_y - self.map_origin.position.y)*self.map_resolution])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
