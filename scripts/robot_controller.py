@@ -6,16 +6,31 @@ import numpy as np
 from robotics_final_project.msg import NodeRow, NodeMatrix
 from pathfinding import Node
 import math
-from geometry_msgs.msg import Vector3, Twist, Point
+from geometry_msgs.msg import Vector3, Twist, Point, PoseWithCovarianceStamped
 import cv2, cv_bridge
 import moveit_commander
 from sensor_msgs.msg import Image,LaserScan
+from tf.transformations import euler_from_quaternion
+from nav_msgs.msg import OccupancyGrid
+
 
 def convert_hsv (h, s, v):
     new_h = h/2 - 1
     new_s = s * 256 - 1
     new_v = v * 256 - 1
     return np.array([new_h, new_s, new_v])
+
+def get_yaw_from_pose(p):
+    """ A helper function that takes in a Pose object (geometry_msgs) and returns yaw"""
+
+    yaw = (euler_from_quaternion([
+            p.orientation.x,
+            p.orientation.y,
+            p.orientation.z,
+            p.orientation.w])
+            [2])
+
+    return yaw
 
 color_index = {"green" : 0, "blue": 1, "pink": 2}
 lower_colors = [convert_hsv(75, 0.40, 0.40), convert_hsv(180, 0.40, 0.40), convert_hsv(300, 0.40, 0.40)] 
@@ -61,8 +76,10 @@ class RobotController(object):
         rospy.init_node("target_nodes")
         rospy.Subscriber("target_path", NodeMatrix, self.update_goal)
         rospy.Subscriber("returned", Point, self.player_returned)
-        self.image_sub = rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
-        rospy.Subscriber("/scan", LaserScan, self.scan_callback)
+        rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
+        rospy.Subscriber("scan", LaserScan, self.scan_callback)
+        rospy.Subscriber("amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
+        rospy.Subscriber("map", OccupancyGrid, self.get_map)
 
         # TODO: implement subscriber for node that uses PFL replacement library
         self.node_pub = rospy.Publisher("target_nodes", NodeMatrix, queue_size=10)
@@ -75,6 +92,22 @@ class RobotController(object):
         self.bridge = cv_bridge.CvBridge()
 
         print("RC: initialized")
+
+    def get_map(self, data):
+        self.map = data
+        map_info = self.map.info
+        # The data of our map specifying occupancy probabilities
+        self.map_data = self.map.data
+        # A float describing m / cell fo the map
+        self.map_resolution = map_info.resolution
+        # How many cells the map is across
+        self.map_width = map_info.width
+        # How many cells the map is up and down
+        self.map_height = map_info.height
+        # The pose of the map's origin
+        self.map_origin = map_info.origin
+        # self.width = data.info.width
+        # self.height = data.info.height
 
     def update_movement_flag(self):
         #print("Horizontal Error: ", self.horizontal_error)
@@ -185,7 +218,7 @@ class RobotController(object):
         self.arrived_at_target_counter = 0
         self.arrived_at_goal = False
         # print("Current target updated to tag: ", self.current_target)
-        return
+        # return
 
     def place_baton(self):
         print("Placing Baton")
@@ -216,7 +249,7 @@ class RobotController(object):
         self.current_target = None
         self.goal_type = "player"
         self.arrived_at_goal = False
-        return
+        # return
 
     def scan_callback(self, data):
         if self.goal_type == "flag" and self.arrived_at_goal:
@@ -235,7 +268,7 @@ class RobotController(object):
                 self.distance_error = center_average / 3.5
             else:
                 self.distance_error = 0
-            self.update_movement()
+            self.update_movement_flag()
             return
 
     def update_goal(self, data):
@@ -245,9 +278,11 @@ class RobotController(object):
         self.goal_theta = math.atan(self.goal_y - self.y, self.goal_x - self.x)
         # print("updated_goal")
 
-    def update_current_pos(self):
-        # TODO: update current x and y 
-        pass
+    def update_current_pos(self, data):
+        pos = data.pose.pose.position
+        self.x = pos.x
+        self.y = pos.y
+        self.theta = get_yaw_from_pose(data.pose.pose)
 
     def decide_current_target(self):
         # TODO: if attempting to tag opponent takes a shorter time than
@@ -266,12 +301,12 @@ class RobotController(object):
         # print("decided target")
         if self.received_response:
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow(self.x, self.y), NodeRow(self.player_x, self.player_y)]))
+            self.node_pub.publish(NodeMatrix([NodeRow([self.x, self.y]), NodeRow([self.player_x, self.player_y])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow(self.x, self.y), NodeRow(self.end_x, self.end_y)]))
+            self.node_pub.publish(NodeMatrix([NodeRow([self.x, self.y]), NodeRow([self.end_x, self.end_y])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
@@ -304,12 +339,6 @@ class RobotController(object):
             self.arrived_at_goal = 0
         # print("updated movement")
 
-    def grab_flag(self):
-        return
-
-    def drop_flag(self):
-        return
-
     def player_returned(self, data):
         self.player_returning = 0
 
@@ -318,7 +347,6 @@ class RobotController(object):
         a = Vector3(x = 0, y = 0, z = self.angspeed)
         while not rospy.is_shutdown():
             self.decide_current_target()
-            self.update_current_pos()
             self.update_movement()
             if self.arrived_at_goal:
                 if self.goal_type == "player":

@@ -37,6 +37,7 @@ class Pathfinder(object):
         # rospy.sleep(2)
         rospy.init_node("target_path")
         rospy.Subscriber("target_nodes", NodeMatrix, self.get_target)
+        rospy.Subscriber("map", OccupancyGrid, self.get_map)
         self.path_pub = rospy.Publisher("target_path", NodeMatrix, queue_size=10)
         rospy.sleep(2)
 
@@ -48,6 +49,17 @@ class Pathfinder(object):
 
     def get_map(self, data):
         self.map = data
+        map_info = self.map.info
+        # The data of our map specifying occupancy probabilities
+        self.map_data = self.map.data
+        # A float describing m / cell fo the map
+        self.map_resolution = map_info.resolution
+        # How many cells the map is across
+        self.map_width = map_info.width
+        # How many cells the map is up and down
+        self.map_height = map_info.height
+        # The pose of the map's origin
+        self.map_origin = map_info.origin
         # self.width = data.info.width
         # self.height = data.info.height
 
