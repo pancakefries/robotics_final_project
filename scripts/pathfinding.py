@@ -15,7 +15,7 @@ class Node(object):
         self.parent = None
 
 class Pathfinder(object):
-    def __init__(self, start: Node, end: Node):
+    def __init__(self):
         self.current = None
         self.start = None
         self.goal = None
@@ -35,14 +35,43 @@ class Pathfinder(object):
         self.path_pub = rospy.Publisher("target_path", NodeMatrix, queue_size=10)
 
     def get_target(self, data):
+        # print("Pathfinding: getting target")
         self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
-        self.start.parent = [start.x, start.y]
+        self.start.parent = [self.start.x, self.start.y]
         self.goal = Node(data.matrix[1].row[0], data.matrix[1].row[1])
         self.current = Node(data.matrix[0].row[0], data.matrix[0].row[1])
         self.current.parent = [self.current.x, self.current.y]
+        # print("Pathfinding: waiting for map")
         while not self.map_initialized:
             rospy.sleep(0.1)
+        # print("Pathfinding: recieved target")
         self.a_star()
+
+    def downsample_map(self):
+        new_map_data = np.reshape(self.map_data, (self.width, self.height))
+        a = new_map_data[::4, ::4]
+        b = new_map_data[1::4, 1::4]
+        c = new_map_data[2::4, 2::4]
+        d = new_map_data[3::4, 3::4]
+        new_map_data = a | b 
+        new_map_data = new_map_data | c
+        new_map_data = new_map_data | d
+        self.map_data = new_map_data.flatten()
+        self.width = int(self.width / 4)
+        self.height = int(self.height / 4)
+
+    def pad_map(self):
+        new_map_data = np.reshape(self.map_data, (self.width, self.height))
+        for i in np.reshape(self.map_data, (self.width, self.height)):
+            for j in i:
+                if j == 100:
+                    for k in [0, 1, 2, 3]:
+                        for h in [0, 1, 2, 3]:
+                            new_map_data[i + k][j + h] = 100
+                            new_map_data[i + k][j - h] = 100
+                            new_map_data[i - k][j + h] = 100
+                            new_map_data[i - k][j - h] = 100
+        self.map_data = new_map_data.flatten()
 
     def get_map(self, data):
         self.map = data
@@ -64,7 +93,10 @@ class Pathfinder(object):
             for j in range(self.height):
                 row.append(Node(i, j))
             self.grid.append(row)
+        # self.downsample_map()
+        self.pad_map()
         self.map_initialized = True
+        print("Pathfinding: map initialized")
 
     def get_neighbors(self, current):
         # Get the 8 coordinates surrounding the current cell
@@ -77,7 +109,7 @@ class Pathfinder(object):
                     (current.x + x_offset < self.width) and \
                     (current.y + y_offset < self.height) and \
                     (current.x + x_offset >= 0) and (current.y + y_offset >= 0) and \
-                    (self.map_data[x_offset + y_offset*self.width] == 1):
+                    (self.map_data[(current.x + x_offset) + (current.y + y_offset)*self.width] == 0):
                     neighbors.append([current.x + x_offset, current.y + y_offset])
         return neighbors
 
@@ -99,10 +131,13 @@ class Pathfinder(object):
         return (14 * min([dist_x, dist_y])) + (10 * abs(dist_x - dist_y))
     
     def a_star(self):
+        # print("Pathfinding: astar")
         open_list = []
         closed_list = []
         open_list.append(self.current)
         update_fcost = lambda node : node.gcost + node.hcost
+        # print(self.current.x, self.current.y)
+        # print(self.goal.x, self.goal.y)
 
         while self.current.x != self.goal.x or self.current.y != self.goal.y:
             lowest = open_list[0]
@@ -116,7 +151,9 @@ class Pathfinder(object):
             if self.current.x == self.goal.x and self.current.y == self.goal.y:
                 break
             
-            for nb in self.get_neighbors(self.current):
+            ns = self.get_neighbors(self.current)
+            # print("n neighbors: ", len(ns))
+            for nb in ns:
                 if self.grid[nb[0]][nb[1]] not in closed_list:
                     old_parent = self.grid[nb[0]][nb[1]].parent
                     test_node = self.grid[nb[0]][nb[1]]
@@ -152,9 +189,10 @@ class Pathfinder(object):
 if __name__ == '__main__':
     # m = 10
     # n = 12
-    start = Node(1, 1)
-    end = Node(7, 9)
-    pf = Pathfinder(start, end)
+    # start = Node(1, 1)
+    # end = Node(7, 9)
+    pf = Pathfinder()
+    rospy.spin()
     # path = pf.a_star()
     # for p in path:
     #     print(p.x, p.y, p.gcost, p.hcost)

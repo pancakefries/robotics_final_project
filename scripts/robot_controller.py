@@ -41,8 +41,8 @@ class RobotController(object):
         self.y = 0
         self.theta = 0
 
-        self.goal_x = 0
-        self.goal_y = 0
+        self.goal_x = 1
+        self.goal_y = 1
         self.goal_theta = 0
 
         self.player_x = 0
@@ -51,22 +51,24 @@ class RobotController(object):
         self.end_y = 0
 
         self.linspeed = 0
-        self.linspeed_max = 0.7
+        self.linspeed_max = 0.03
         self.angspeed = 0
-        self.angspeed_scale = 3
+        self.angspeed_scale = 0.3
 
         self.received_response = 1
         self.arrived_at_goal = 0
         self.goal_type = "flag" # options are flag, player, and goal
         self.player_returning = 0
 
-        self.current_target = None
+        self.current_target = "green"
         self.target_in_view = False
         self.horizontal_error = 0
         self.distance_error = 0
         self.arrived_at_target_counter = 0
 
         self.holding_item = False
+
+        self.map_initialized = False
 
         lin = Vector3()
         ang = Vector3()
@@ -75,18 +77,18 @@ class RobotController(object):
         rospy.init_node("target_nodes")
         rospy.Subscriber("target_path", NodeMatrix, self.update_goal)
         rospy.Subscriber("returned", Point, self.player_returned)
-        rospy.Subscriber('bot/camera/rgb/image_raw', Image, self.image_callback)
-        rospy.Subscriber("bot/scan", LaserScan, self.scan_callback)
-        rospy.Subscriber("bot/amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
-        rospy.Subscriber("bot/map", OccupancyGrid, self.get_map)
+        rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
+        rospy.Subscriber("scan", LaserScan, self.scan_callback)
+        rospy.Subscriber("amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
+        rospy.Subscriber("map", OccupancyGrid, self.get_map)
 
         # TODO: implement subscriber for node that uses PFL replacement library
         self.node_pub = rospy.Publisher("target_nodes", NodeMatrix, queue_size=10)
         self.vel_pub = rospy.Publisher("cmd_vel", Twist, queue_size=10)
         self.return_pub = rospy.Publisher("player_return", Point, queue_size=10)
 
-        self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
-        self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
+        # self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
+        # self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
 
         self.bridge = cv_bridge.CvBridge()
 
@@ -99,6 +101,7 @@ class RobotController(object):
         self.map_data = self.map.data
         # A float describing m / cell fo the map
         self.map_resolution = map_info.resolution
+        # print(self.map_resolution)
         # How many cells the map is across
         self.map_width = map_info.width
         # How many cells the map is up and down
@@ -107,6 +110,10 @@ class RobotController(object):
         self.map_origin = map_info.origin
         # self.width = data.info.width
         # self.height = data.info.height
+        # print(self.map_origin.position.x, self.map_origin.position.y)
+        print("RC: map initialized")
+        self.map_initialized = True
+        
 
     def update_movement_flag(self):
         #print("Horizontal Error: ", self.horizontal_error)
@@ -175,6 +182,7 @@ class RobotController(object):
                 self.target_in_view = False
                 self.horizontal_error = 10
             
+            print("RC: image callback")
             self.update_movement_flag()
 
         else:
@@ -268,13 +276,19 @@ class RobotController(object):
             else:
                 self.distance_error = 0
             self.update_movement_flag()
-            return
+            print("RC: scan callback")
 
     def update_goal(self, data):
         self.received_response = 1
-        self.goal_x = data.matrix[-1].row[0]
-        self.goal_y = data.matrix[-1].row[1]
-        self.goal_theta = math.atan(self.goal_y - self.y, self.goal_x - self.x)
+        print("matrix length: ", len(data.matrix))
+        l = 3
+        if len(data.matrix) < l:
+            l = len(data.matrix)
+        for i in range(l):
+            rospy.sleep(0.3)
+            self.goal_x = data.matrix[1*i].row[0]
+            self.goal_y = data.matrix[1*i].row[1]
+            self.goal_theta = math.atan2(self.goal_y - self.y, self.goal_x - self.x)
         # print("updated_goal")
 
     def update_current_pos(self, data):
@@ -298,20 +312,22 @@ class RobotController(object):
         #     self.received_response = 0
         #     execute above
         # print("decided target")
-        if self.received_response:
+        # print("RC: deciding target")
+        if self.received_response and self.map_initialized:
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow([(self.x - self.map_origin.position.x)*self.map_resolution, \
-                                                       (self.y - self.map_origin.position.y)*self.map_resolution]), \
-                                              NodeRow([(self.player_x - self.map_origin.position.x)*self.map_resolution, \
-                                                       (self.player_y - self.map_origin.position.y)*self.map_resolution])]))
+            rospy.sleep(1)
+            self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+                                                       int((self.x/self.map_resolution) + 172.824563)]), \
+                                              NodeRow([int((self.player_y/self.map_resolution) + 244.837626), \
+                                                       int((self.player_x/self.map_resolution) + 172.824563)])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
             self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow([(self.x - self.map_origin.position.x)*self.map_resolution, \
-                                                       (self.y - self.map_origin.position.y)*self.map_resolution]), \
-                                              NodeRow([(self.end_x - self.map_origin.position.x)*self.map_resolution, \
-                                                       (self.end_y - self.map_origin.position.y)*self.map_resolution])]))
+            self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+                                                       int((self.x/self.map_resolution) + 172.824563)]), \
+                                              NodeRow([int((self.end_y/self.map_resolution) + 244.837626), \
+                                                       int((self.end_x/self.map_resolution) + 172.824563)])]))
             while not self.received_response:
                 rospy.sleep(0.1)
             dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
@@ -320,6 +336,7 @@ class RobotController(object):
                 self.goal_type = "player"
             else:
                 self.goal_type = "goal"
+            # print("RC: decided target")
 
     def path_to_map(self, data):
         # TODO: implement coordinate transform between pathfinding and map
@@ -333,16 +350,24 @@ class RobotController(object):
         # Use proportional control to navigate to goal, accuracy is not super 
         # important since it is constantly being updated, so odom is not necessary
         # TODO: experiment with values for self.angspeed_scale
-        self.angspeed = (self.theta - self.goal_theta) * self.angspeed_scale
-        dist = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
-        # Use a threshold to stop so that the bot doesn't overshoot
-        if dist >= 0 and dist <= 0.2:
-            self.linspeed = 0
-            self.arrived_at_goal = 1
-        else:
-            self.linspeed = self.linspeed_max
-            self.arrived_at_goal = 0
-        # print("updated movement")
+        # print("RC: updating movement")
+        if self.received_response and self.map_initialized:
+            diff = self.goal_theta - self.theta
+            if abs(diff) > 0.6:
+                self.angspeed = self.angspeed_scale * (diff / abs(diff))
+            else:
+                self.angspeed = (diff / np.pi) * self.angspeed_scale
+            dist = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
+            # Use a threshold to stop so that the bot doesn't overshoot
+            if dist >= 0 and dist <= 0.2:
+                print("RC: arrived at goal")
+                self.linspeed = 0
+                self.arrived_at_goal = 1
+            else:
+                print("RC: not yet at goal")
+                self.linspeed = self.linspeed_max
+                self.arrived_at_goal = 0
+            # print("RC: updated movement")
 
     def player_returned(self, data):
         self.player_returning = 0
@@ -354,12 +379,15 @@ class RobotController(object):
             self.decide_current_target()
             self.update_movement()
             if self.arrived_at_goal:
+                print("RC: reached goal")
                 if self.goal_type == "player":
+                    print("RC: player return")
                     self.return_pub.publish(Point(1, 1))
                     self.player_returning = 1
                     while self.player_returning:
                         rospy.sleep(0.2)
                 else:
+                    print("RC: waiting to pickup/drop")
                     while self.arrived_at_goal:
                         rospy.sleep(0.5)
                 self.arrived_at_goal = 0
