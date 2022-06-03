@@ -26,28 +26,28 @@ class Pathfinder(object):
         self.height = 0
         self.map_initialized = False
 
-        # TODO: create map using SLAM and import it for obstacle data
-        # rospy.Subscriber("map", OccupancyGrid, self.get_map)
-        # rospy.sleep(2)
         rospy.init_node("target_path")
+        # /target_nodes is where start and end positions are received
         rospy.Subscriber("target_nodes", NodeMatrix, self.get_target)
         rospy.Subscriber("map", OccupancyGrid, self.get_map)
+        # Path calculated and sent to robot_controller
         self.path_pub = rospy.Publisher("target_path", NodeMatrix, queue_size=10)
 
     def get_target(self, data):
-        # print("Pathfinding: getting target")
+        # When a new path request arrives, initialize the starting, goal, and current nodes
         self.start = Node(data.matrix[0].row[0], data.matrix[0].row[1])
         self.start.parent = [self.start.x, self.start.y]
         self.goal = Node(data.matrix[1].row[0], data.matrix[1].row[1])
         self.current = Node(data.matrix[0].row[0], data.matrix[0].row[1])
         self.current.parent = [self.current.x, self.current.y]
-        # print("Pathfinding: waiting for map")
+        # Make sure that the map is initialized before starting the algorithm
         while not self.map_initialized:
             rospy.sleep(0.1)
-        # print("Pathfinding: recieved target")
         self.a_star()
 
     def downsample_map(self):
+        # An attempt to stop the robot from navigating through walls by downsampling
+        # the map by a factor of 4. Ultimately seems to be unsuccessful
         new_map_data = np.reshape(self.map_data, (self.width, self.height))
         a = new_map_data[::4, ::4]
         b = new_map_data[1::4, 1::4]
@@ -61,12 +61,14 @@ class Pathfinder(object):
         self.height = int(self.height / 4)
 
     def pad_map(self):
+        # Another attempt to stop the robot from navigating through walls, this time
+        # by padding the walls (I think the issue is that paths hug walls)
         new_map_data = np.reshape(self.map_data, (self.width, self.height))
         for i in np.reshape(self.map_data, (self.width, self.height)):
             for j in i:
                 if j == 100:
-                    for k in [0, 1, 2, 3]:
-                        for h in [0, 1, 2, 3]:
+                    for k in [0, 1, 2]:
+                        for h in [0, 1, 2]:
                             new_map_data[i + k][j + h] = 100
                             new_map_data[i + k][j - h] = 100
                             new_map_data[i - k][j + h] = 100
@@ -76,23 +78,18 @@ class Pathfinder(object):
     def get_map(self, data):
         self.map = data
         map_info = self.map.info
-        # The data of our map specifying occupancy probabilities
         self.map_data = self.map.data
-        # A float describing m / cell fo the map
         self.map_resolution = map_info.resolution
-        # How many cells the map is across
         self.width = map_info.width
-        # How many cells the map is up and down
         self.height = map_info.height
-        # The pose of the map's origin
         self.map_origin = map_info.origin
-        # self.width = data.info.width
-        # self.height = data.info.height
+        # Initialize the pathfinding grid with appropriate dimensions
         for i in range(self.width):
             row = []
             for j in range(self.height):
                 row.append(Node(i, j))
             self.grid.append(row)
+        # Use one of the attempted solutions, neither are great as of right now
         # self.downsample_map()
         self.pad_map()
         self.map_initialized = True
@@ -104,7 +101,7 @@ class Pathfinder(object):
         neighbors = []
         for x_offset in offsets:
             for y_offset in offsets:
-                # Ensure that they fall within the bounds of the board
+                # Ensure that they fall within the bounds of the board and are valid positions
                 if (x_offset != y_offset or x_offset != 0) and \
                     (current.x + x_offset < self.width) and \
                     (current.y + y_offset < self.height) and \
@@ -131,13 +128,10 @@ class Pathfinder(object):
         return (14 * min([dist_x, dist_y])) + (10 * abs(dist_x - dist_y))
     
     def a_star(self):
-        # print("Pathfinding: astar")
         open_list = []
         closed_list = []
         open_list.append(self.current)
         update_fcost = lambda node : node.gcost + node.hcost
-        # print(self.current.x, self.current.y)
-        # print(self.goal.x, self.goal.y)
 
         while self.current.x != self.goal.x or self.current.y != self.goal.y:
             lowest = open_list[0]

@@ -41,6 +41,7 @@ class RobotController(object):
         self.y = 0
         self.theta = 0
 
+        # Dummy coords for goal for testing
         self.goal_x = 1
         self.goal_y = 1
         self.goal_theta = 0
@@ -51,15 +52,16 @@ class RobotController(object):
         self.end_y = 0
 
         self.linspeed = 0
-        self.linspeed_max = 0.03
+        self.linspeed_max = 0.02
         self.angspeed = 0
-        self.angspeed_scale = 0.3
+        self.angspeed_scale = 0.2
 
         self.received_response = 1
         self.arrived_at_goal = 0
         self.goal_type = "flag" # options are flag, player, and goal
         self.player_returning = 0
 
+        # Set to whatever color "flag" is being used (green, blue, pink)
         self.current_target = "green"
         self.target_in_view = False
         self.horizontal_error = 0
@@ -82,11 +84,11 @@ class RobotController(object):
         rospy.Subscriber("amcl_pose", PoseWithCovarianceStamped, self.update_current_pos)
         rospy.Subscriber("map", OccupancyGrid, self.get_map)
 
-        # TODO: implement subscriber for node that uses PFL replacement library
         self.node_pub = rospy.Publisher("target_nodes", NodeMatrix, queue_size=10)
         self.vel_pub = rospy.Publisher("cmd_vel", Twist, queue_size=10)
         self.return_pub = rospy.Publisher("player_return", Point, queue_size=10)
 
+        # Comment out below if using turtlebot without arm (for testing)
         # self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
         # self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
 
@@ -97,27 +99,18 @@ class RobotController(object):
     def get_map(self, data):
         self.map = data
         map_info = self.map.info
-        # The data of our map specifying occupancy probabilities
         self.map_data = self.map.data
-        # A float describing m / cell fo the map
         self.map_resolution = map_info.resolution
-        # print(self.map_resolution)
-        # How many cells the map is across
         self.map_width = map_info.width
-        # How many cells the map is up and down
         self.map_height = map_info.height
-        # The pose of the map's origin
         self.map_origin = map_info.origin
-        # self.width = data.info.width
-        # self.height = data.info.height
-        # print(self.map_origin.position.x, self.map_origin.position.y)
         print("RC: map initialized")
         self.map_initialized = True
-        
+
+    # Most of the code for finding, picking up, and placing the flag is
+    # adapted from my group's implementatino of the Q-Learning Project
 
     def update_movement_flag(self):
-        #print("Horizontal Error: ", self.horizontal_error)
-        #print("Distance Error: ", self.distance_error)
         # If can see target (cam), turn toward it
         if (self.target_in_view):
             turn_speed = (- self.horizontal_error) * 0.4
@@ -140,22 +133,19 @@ class RobotController(object):
         
         print("Counter: ",self.arrived_at_target_counter)
 
+        # Will need to tinker with threshold to stop at right distance
         if (self.arrived_at_target_counter > 100 and self.holding_item == False and self.goal_type == 'flag'):    
             self.holding_item = True
-            #if self.current_target_type == 'baton':
             self.pick_up_baton()
         elif (self.arrived_at_target_counter > 100 and self.holding_item == True and self.goal_type == 'goal'):
             self.holding_item = False
-            #elif self.current_target_type == 'artag':
             self.place_baton()
 
     def image_callback(self, msg):
-        #print("See image")
-        # converts the incoming ROS message to OpenCV format and HSV (hue, saturation, value)
         if self.goal_type == "flag" and self.arrived_at_goal:
+            # Converts the ROS message to OpenCV format and HSV (hue, saturation, value)
             image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
             h, w, d = image.shape
-            #cv2.imshow("window", image)
                     
             hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
             
@@ -166,9 +156,9 @@ class RobotController(object):
 
             M = cv2.moments(mask)
 
-            # If any green pixels are found
+            # If any target color pixels are found
             if M['m00'] > 0:
-                # Center of the green pixels in the image
+                # Center of the target color pixels in the image
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
 
@@ -190,8 +180,6 @@ class RobotController(object):
 
     def pick_up_baton(self):
         print("Picking up baton")
-        # rospy.sleep(3)
-        # TODO: Implement pickup
         # Move arm back
         arm_goal = [0.0, np.radians(-93), np.radians(62), np.radians(33)]
         self.move_group_arm.go(arm_goal, wait=True)
@@ -220,17 +208,14 @@ class RobotController(object):
         self.move_group_arm.stop()
 
         self.goal_type = "goal"
-        # self.current_target = self.current_action.tag_id
         self.target_in_view = False
         self.arrived_at_target_counter = 0
         self.arrived_at_goal = False
-        # print("Current target updated to tag: ", self.current_target)
-        # return
 
     def place_baton(self):
         print("Placing Baton")
+        # Will have to tinker with sleep to approach at proper distance
         rospy.sleep(3)
-        # TODO : Implement placement
         # Extend to place
         arm_goal = [0.0, np.radians(38), np.radians(-3), np.radians(-29)]
         self.move_group_arm.go(arm_goal, wait=True)
@@ -254,16 +239,15 @@ class RobotController(object):
         self.arrived_at_target_counter = 0
         self.target_in_view = False
         self.current_target = None
+        # Updating goal type probably not necessary since robot will have won
         self.goal_type = "player"
         self.arrived_at_goal = False
-        # return
 
     def scan_callback(self, data):
         if self.goal_type == "flag" and self.arrived_at_goal:
             center_average = 0
             angles = [359, 0, 1]
             for i in angles:
-                #print(i, ": ", data.ranges[i])
                 if data.ranges[i] == 0.0:
                     center_average += 0.01
                 if data.ranges[i] > 4:
@@ -281,15 +265,17 @@ class RobotController(object):
     def update_goal(self, data):
         self.received_response = 1
         print("matrix length: ", len(data.matrix))
-        l = 3
-        if len(data.matrix) < l:
-            l = len(data.matrix)
-        for i in range(l):
-            rospy.sleep(0.3)
-            self.goal_x = data.matrix[1*i].row[0]
-            self.goal_y = data.matrix[1*i].row[1]
-            self.goal_theta = math.atan2(self.goal_y - self.y, self.goal_x - self.x)
-        # print("updated_goal")
+        # The commented code can be used to follow the received path for 
+        # longer than one cell
+        # l = 3
+        # if len(data.matrix) < l:
+        #     l = len(data.matrix)
+        # for i in range(l):
+        #     rospy.sleep(0.3)
+        self.goal_x = data.matrix[-1].row[0]
+        self.goal_y = data.matrix[-1].row[1]
+        self.goal_theta = math.atan2(self.goal_y - self.y, self.goal_x - self.x)
+        self.update_movement()
 
     def update_current_pos(self, data):
         pos = data.pose.pose.position
@@ -313,46 +299,69 @@ class RobotController(object):
         #     execute above
         # print("decided target")
         # print("RC: deciding target")
+        # 
+        # The odd numbers added to the positions are offsets for converting ot map coords
         if self.received_response and self.map_initialized:
-            self.received_response = 0
-            rospy.sleep(1)
-            self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+            dist_player = math.sqrt(pow(abs(self.x - self.player_x), 2) + pow(abs(self.y - self.player_y), 2))
+            dist_end = math.sqrt(pow(abs(self.x - self.end_x), 2) + pow(abs(self.y - self.end_y), 2))
+            if dist_player < dist_end:
+                self.goal_type = "player"
+                self.received_response = 0
+                rospy.sleep(0.25)
+                self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
                                                        int((self.x/self.map_resolution) + 172.824563)]), \
                                               NodeRow([int((self.player_y/self.map_resolution) + 244.837626), \
                                                        int((self.player_x/self.map_resolution) + 172.824563)])]))
-            while not self.received_response:
-                rospy.sleep(0.1)
-            dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
-            self.received_response = 0
-            self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+                while not self.received_response:
+                    rospy.sleep(0.1)
+            else:
+                self.goal_type = "goal"
+                self.received_response = 0
+                rospy.sleep(0.25)
+                self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
                                                        int((self.x/self.map_resolution) + 172.824563)]), \
                                               NodeRow([int((self.end_y/self.map_resolution) + 244.837626), \
                                                        int((self.end_x/self.map_resolution) + 172.824563)])]))
-            while not self.received_response:
-                rospy.sleep(0.1)
-            dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
+                while not self.received_response:
+                    rospy.sleep(0.1)
 
-            if dist_player < dist_end:
-                self.goal_type = "player"
-            else:
-                self.goal_type = "goal"
-            # print("RC: decided target")
 
-    def path_to_map(self, data):
-        # TODO: implement coordinate transform between pathfinding and map
-        return data
+            # self.received_response = 0
+            # rospy.sleep(1)
+            # self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+            #                                            int((self.x/self.map_resolution) + 172.824563)]), \
+            #                                   NodeRow([int((self.player_y/self.map_resolution) + 244.837626), \
+            #                                            int((self.player_x/self.map_resolution) + 172.824563)])]))
+            # while not self.received_response:
+            #     rospy.sleep(0.1)
+            # dist_player = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
+            # self.received_response = 0
+            # self.node_pub.publish(NodeMatrix([NodeRow([int((self.y/self.map_resolution) + 244.837626), \
+            #                                            int((self.x/self.map_resolution) + 172.824563)]), \
+            #                                   NodeRow([int((self.end_y/self.map_resolution) + 244.837626), \
+            #                                            int((self.end_x/self.map_resolution) + 172.824563)])]))
+            # while not self.received_response:
+            #     rospy.sleep(0.1)
+            # dist_end = math.sqrt(pow(abs(self.x - self.goal_x), 2) + pow(abs(self.y - self.goal_y), 2))
 
-    def map_to_path(self, data):
-        # TODO: implement coordinate transform between map and pathfinding
-        return data
+            # if dist_player < dist_end:
+            #     self.goal_type = "player"
+            # else:
+            #     self.goal_type = "goal"
+            # # print("RC: decided target")
 
     def update_movement(self):
         # Use proportional control to navigate to goal, accuracy is not super 
-        # important since it is constantly being updated, so odom is not necessary
+        # important since it is constantly being updated
         # TODO: experiment with values for self.angspeed_scale
+        # Too high values of angspeed_scale causes overshootingS
         # print("RC: updating movement")
         if self.received_response and self.map_initialized:
             diff = self.goal_theta - self.theta
+            # diff *= -1
+            # Use piecewise function to control angular speed, if difference between
+            # goal and current theta is > 0.6rad, then set to max speed, otherwise
+            # scale linearly with the difference
             if abs(diff) > 0.6:
                 self.angspeed = self.angspeed_scale * (diff / abs(diff))
             else:
@@ -382,15 +391,23 @@ class RobotController(object):
                 print("RC: reached goal")
                 if self.goal_type == "player":
                     print("RC: player return")
+                    l.x = 0
+                    a.z = 0
+                    self.vel_pub.publish(Twist(linear = l, angular = a))
+                    # Calling this while running player_return.py will display a
+                    # prompt for the player to accept once they've returned to start
                     self.return_pub.publish(Point(1, 1))
                     self.player_returning = 1
                     while self.player_returning:
                         rospy.sleep(0.2)
                 else:
                     print("RC: waiting to pickup/drop")
+                    # Pause main loop and navigation to flag and pickup/drop will take
+                    # over due to scan and camera callback functions, resume when done
                     while self.arrived_at_goal:
                         rospy.sleep(0.5)
                 self.arrived_at_goal = 0
+            # The angular and linear speeds are constantly updated asynchronously
             l.x = self.linspeed
             a.z = self.angspeed
             self.vel_pub.publish(Twist(linear = l, angular = a))
@@ -400,3 +417,4 @@ class RobotController(object):
 if __name__ == "__main__":
     rc = RobotController()
     rc.run()
+    
