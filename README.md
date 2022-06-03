@@ -45,4 +45,4 @@ If I had more time to work on this project I would dedicate much of it to debugg
 - I feel like this project in particular has given me a vastly better understanding of how to design and implement a complex system with lots of moving parts. Having multiple scripts sending and receiving messages from each other while also being updated with sensor information and pose estimation was a tough challenge to both design and implement. I have never had to do anything close to this, much less on my own, and I feel like this has been a very practically applicable and valuable experience to have had (even if not all the features I would’ve liked to have were implemented).
 
 ## Demo
-![trim.D35D97A0-B768-4A02-A640-0E239C5AFBAE.gif]https://github.com/pancakefries/robotics_final_project/blob/main/trim.D35D97A0-B768-4A02-A640-0E239C5AFBAE.gif
+![trim.D35D97A0-B768-4A02-A640-0E239C5AFBAE.gif](https://github.com/pancakefries/robotics_final_project/blob/main/trim.D35D97A0-B768-4A02-A640-0E239C5AFBAE.gif)
